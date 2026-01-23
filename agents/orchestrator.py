@@ -1,44 +1,43 @@
-# 2026-01-23 송진우
 """
 orchestrator.py
 
-역할:
-- 프로젝트 전체 파이프라인의 '흐름'만 제어한다.
-- 판단(ML), 생성(LLM), 규칙(Safety)을 직접 수행하지 않는다.
-- 각 Agent / Tool / Pipeline을 올바른 순서로 호출한다.
+전체 파이프라인의 흐름을 제어하는 중앙 조정자(Coordinator).
 
-중요 설계 원칙:
-- Orchestrator는 '지휘자'이지 '연주자'가 아니다.
-- 모든 실제 작업은 다른 모듈에 위임한다.
+책임:
+- 사용자 입력 → 각 Agent / Tool 호출 순서 제어
+- 응급 여부에 따른 분기 처리
+- Agent 간 데이터 전달
+- 최종 응답 구조 조립
+
+❌ 하지 않는 것
+- GPT 호출
+- 프롬프트 작성
+- 의료 판단
+- 병원 추천 로직
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-# Agents
-from agents.symptom_agent import SymptomAgent
-from agents.explain_agent import ExplainAgent
-from agents.safety_agent import SafetyAgent
+from agents import (
+    SymptomAgent,
+    ExplainAgent,
+    SafetyAgent,
+)
 
-# Tools
-from tools.ml_predict_tool import MLPredictTool
-from tools.web_search_tool import WebSearchTool
-from tools.hospital_lookup_tool import HospitalLookupTool
+from tools import (
+    MLPredictTool,
+    HospitalLookupTool,
+)
 
-# Pipelines
 from pipelines.symptom_to_vector import symptom_to_vector
 from pipelines.topk_postprocess import postprocess_topk
-from pipelines.response_formatter import ResponseFormatter
+from pipelines.response_formatter import format_response
 
 
 class Orchestrator:
     """
-    Orchestrator
-
-    입력:
-    - 사용자 자연어 증상 텍스트
-
-    출력:
-    - UI(Streamlit)가 바로 사용할 수 있는 최종 응답 dict
+    Orchestrator는 상태를 거의 가지지 않는 Stateless Coordinator이다.
+    (세션 상태는 상위 레이어—FastAPI / Streamlit—에서 관리)
     """
 
     def __init__(
@@ -47,99 +46,102 @@ class Orchestrator:
         explain_agent: ExplainAgent,
         safety_agent: SafetyAgent,
         ml_predict_tool: MLPredictTool,
-        web_search_tool: WebSearchTool,
-        hospital_lookup_tool: HospitalLookupTool,
-        response_formatter: ResponseFormatter,
+        hospital_tool: HospitalLookupTool,
     ):
         """
-        모든 의존성은 main.py에서 생성되어 주입된다.
-        Orchestrator는 생성 책임을 가지지 않는다.
-        """
+        main.py에서 생성한 Agent / Tool 인스턴스를 주입받는다.
 
+        이렇게 하는 이유:
+        - LLM client 공유
+        - 테스트 용이성
+        - 의존성 역전 (DI)
+        """
         self.symptom_agent = symptom_agent
         self.explain_agent = explain_agent
         self.safety_agent = safety_agent
-
         self.ml_predict_tool = ml_predict_tool
-        self.web_search_tool = web_search_tool
-        self.hospital_lookup_tool = hospital_lookup_tool
+        self.hospital_tool = hospital_tool
 
-        self.response_formatter = response_formatter
-
-    def run(self, user_input: str) -> Dict[str, Any]:
+    # =========================================================
+    # 1️⃣ 1차 사용자 입력 처리 (메인 플로우)
+    # =========================================================
+    def handle_user_input(
+        self,
+        user_input: str,
+        user_location: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
-        전체 파이프라인 실행 진입점
+        최초 사용자 증상 입력 처리
 
-        Parameters
-        ----------
-        user_input : str
-            사용자가 입력한 자연어 증상 설명
-
-        Returns
-        -------
-        Dict[str, Any]
-            최종 사용자 응답 (UI 친화적 포맷)
+        Flow:
+        1. 증상 추출
+        2. 벡터화
+        3. ML Top-K 예측
+        4. 응급 여부 판단
+        5. 분기 처리
         """
 
-        # =========================================================
-        # 1️⃣ 자연어 → 정규화된 증상 리스트 (LLM Agent)
-        # =========================================================
-        normalized_symptoms = self.symptom_agent.run(user_input)
+        # 1️⃣ 자연어 → 증상 리스트
+        symptoms = self.symptom_agent.extract(user_input)
 
-        # 증상이 거의 없는 경우 조기 종료 (Fail-safe)
-        if not normalized_symptoms:
-            return self.response_formatter.empty_input()
+        # 2️⃣ 증상 → 멀티핫 벡터
+        vector = symptom_to_vector(symptoms)
 
-        # =========================================================
-        # 2️⃣ 응급 여부 판단 (Rule + Safety Agent)
-        # =========================================================
-        emergency_flag = self.safety_agent.check(normalized_symptoms)
+        # 3️⃣ XGBoost 예측 (Top-K)
+        raw_topk = self.ml_predict_tool.predict(vector)
+        topk = postprocess_topk(raw_topk)
 
-        # =========================================================
-        # 3️⃣ 증상 → 멀티핫 벡터 변환 (Pipeline)
-        # =========================================================
-        symptom_vector = symptom_to_vector(normalized_symptoms)
+        # 4️⃣ 응급 여부 판단
+        emergency_result = self.safety_agent.check(symptoms)
 
-        # =========================================================
-        # 4️⃣ ML 질병 예측 (XGBoost Tool)
-        # =========================================================
-        raw_predictions = self.ml_predict_tool.predict(symptom_vector)
+        # =====================================================
+        # 🚨 응급 상황
+        # =====================================================
+        if emergency_result.is_emergency:
+            hospital_info = self.hospital_tool.lookup(
+                location=user_location
+            )
 
-        # =========================================================
-        # 5️⃣ Top-K 후처리 (정렬 / 임계값 / 불확실 처리)
-        # =========================================================
-        topk_results = postprocess_topk(raw_predictions)
+            return format_response(
+                is_emergency=True,
+                symptoms=symptoms,
+                emergency_reason=emergency_result.reason,
+                hospital_info=hospital_info,
+            )
 
-        # =========================================================
-        # 6️⃣ 질병 설명 생성 (GPT-5.2 ExplainAgent)
-        # =========================================================
-        explanation = self.explain_agent.run({
-            "normalized_symptoms": normalized_symptoms,
-            "topk": topk_results,
-            "emergency": emergency_flag
-        })
-
-        # =========================================================
-        # 7️⃣ 조건부 Web Search / 병원 정보
-        # =========================================================
-        web_info = None
-        hospital_info = None
-
-        # 응급 상황에서는 외부 검색보다 즉각 대응 우선
-        if not emergency_flag:
-            web_info = self.web_search_tool.search(topk_results)
-            hospital_info = self.hospital_lookup_tool.lookup(topk_results)
-
-        # =========================================================
-        # 8️⃣ 최종 응답 조립 (Response Formatter)
-        # =========================================================
-        final_response = self.response_formatter.format(
-            symptoms=normalized_symptoms,
-            topk=topk_results,
-            explanation=explanation,
-            web_info=web_info,
-            hospital_info=hospital_info,
-            emergency=emergency_flag
+        # =====================================================
+        # ✅ 비응급 상황
+        # =====================================================
+        explanation = self.explain_agent.generate(
+            symptoms=symptoms,
+            topk=topk,
+            emergency=False,
         )
 
-        return final_response
+        return format_response(
+            is_emergency=False,
+            symptoms=symptoms,
+            topk=topk,
+            explanation=explanation,
+            show_hospital_option=True,  # "원하면 병원 안내" 문구용
+        )
+
+    # =========================================================
+    # 2️⃣ 사용자가 "병원 알려줘"라고 했을 때
+    # =========================================================
+    def handle_hospital_request(
+        self,
+        user_location: Optional[str] = None,
+    ):
+        raw_hospitals = self.hospital_tool.lookup(
+            location=user_location
+        )
+
+        explanation = self.hospital_explain_agent.generate(
+            hospitals=raw_hospitals
+        )
+
+        return {
+            "type": "hospital_info",
+            "explanation": explanation,
+        }
