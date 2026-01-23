@@ -9,7 +9,7 @@ class SafetyAgent:
         # 안전 지침이 담긴 프롬프트 로드
         self.prompt = load_prompt("safety_notice.prompt.md")
 
-    def check(self, symptoms: list) -> SafetyCheckResult:
+    def check(self, symptoms: list, topk: list = None) -> SafetyCheckResult:
         """
         추출된 증상 리스트를 분석하여 응급 여부 및 입력의 적절성 판단
         """
@@ -21,7 +21,8 @@ class SafetyAgent:
             {
                 "role": "user",
                 "content": self.prompt.render_user({
-                    "symptoms": symptoms
+                    "symptoms": symptoms,
+                    "topk": topk  # ML 모델이 예측한 질병 리스트도 함께 전달
                 })
             }
         ]
