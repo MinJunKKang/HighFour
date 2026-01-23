@@ -9,3 +9,6 @@ xgboost>=2.0.0
 
 # OpenAI Agent (LLM calls)
 openai>=1.30.0
+
+# UI
+streamlit>=1.30.0
