@@ -20,6 +20,9 @@ import json
 import numpy as np
 import xgboost as xgb
 
+from dataclasses import dataclass
+from typing import Dict, Any
+
 # =========================
 # 1) 하드코딩 설정(여기만 맞추면 됨)
 # =========================
@@ -137,3 +140,18 @@ def predict_topk_diseases(symptoms: List[str], topk: int = DEFAULT_TOPK) -> List
 
 # alias (짧게 쓰고 싶으면)
 predict = predict_topk_diseases
+
+
+@dataclass
+class MLPredictTool:
+    """
+    Orchestrator 호환 래퍼.
+    - 입력: symptoms(list[str])
+    - 출력: [{"label": str, "score": float}, ...]
+    """
+    topk: int = DEFAULT_TOPK
+
+    def predict(self, symptoms: List[str]) -> List[Dict[str, Any]]:
+        labels = predict_topk_diseases(symptoms, topk=self.topk)
+        # 현재 함수는 확률을 반환하지 않으므로 score는 임시 0.0
+        return [{"label": lb, "score": 0.0} for lb in labels]
