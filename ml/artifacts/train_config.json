@@ -1,0 +1,36 @@
+{
+  "params": {
+    "objective": "multi:softprob",
+    "eval_metric": "mlogloss",
+    "num_class": 678,
+    "max_depth": 7,
+    "eta": 0.1,
+    "subsample": 0.9,
+    "colsample_bytree": 0.8,
+    "lambda": 1.0,
+    "min_child_weight": 5.0,
+    "max_bin": 256,
+    "seed": 42,
+    "tree_method": "hist",
+    "device": "cuda"
+  },
+  "num_boost_round": 2000,
+  "early_stopping_rounds": 50,
+  "symptom_drop_p": 0.1,
+  "metrics": {
+    "best_iteration": 209,
+    "best_score": 0.4383008614519668,
+    "hit@1": 0.8415532879818595,
+    "hit@3": 0.9502753482345319,
+    "hit@5": 0.9733762552640104,
+    "mrr": 0.8992468079844297,
+    "macro_f1": 0.7669358660245308,
+    "entropy_mean": 0.4580921530723572,
+    "top1_conf_mean": 0.8664201498031616,
+    "train_time_sec": 1412.428546667099,
+    "num_classes": 678,
+    "train_n": 172843,
+    "val_n": 24710,
+    "test_n": 49392
+  }
+}
