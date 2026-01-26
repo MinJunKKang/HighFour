@@ -15,7 +15,7 @@ ENV_PATH = PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 # OpenAI Key
-OPENAI_API_KEY = OPENAI_API_KEY="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"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not OPENAI_API_KEY:
     raise RuntimeError(
