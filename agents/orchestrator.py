@@ -33,6 +33,7 @@ class Orchestrator:
         explain_agent,
         hospital_search_agent,
         ml_predict_tool,
+        clarify_agent
     ):
         """
         main.py에서 생성한 객체들을 DI로 주입
@@ -48,6 +49,7 @@ class Orchestrator:
         self.explain_agent = explain_agent
         self.hospital_search_agent = hospital_search_agent
         self.ml_predict_tool = ml_predict_tool
+        self.clarify_agent = clarify_agent
 
     # =========================================================
     # 1️⃣ 최초 사용자 증상 입력 처리
@@ -67,6 +69,19 @@ class Orchestrator:
 
         # 1️⃣ 증상 추출
         normalized_symptoms = self.symptom_agent.run(user_input)
+
+        if not normalized_symptoms:
+            cr = self.clarify_agent.run(user_input)
+
+
+            return {
+            "type": cr["route"], # "clarify" or "redirect"
+            "is_emergency": False,
+            "symptoms": [],
+            "message": cr["message"],
+            "questions": cr.get("questions", []),
+            "can_request_hospital": False, # 버튼 숨김
+            }
 
         # 2️⃣ ML 예측
         topk = self.ml_predict_tool.predict(normalized_symptoms)

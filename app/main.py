@@ -8,6 +8,7 @@ from agents import (
     SafetyAgent,
     ExplainAgent,
     HospitalSearchAgent,
+    ClarifyAgent,
 )
 from agents.orchestrator import Orchestrator
 from tools import MLPredictTool
@@ -25,6 +26,7 @@ def create_orchestrator() -> Orchestrator:
     safety_agent = SafetyAgent(llm_client)
     explain_agent = ExplainAgent(llm_client)
     hospital_search_agent = HospitalSearchAgent(llm_client)
+    clarify_agent = ClarifyAgent(llm_client)
 
     # 3️⃣ ML Tool
     ml_predict_tool = MLPredictTool()
@@ -36,6 +38,7 @@ def create_orchestrator() -> Orchestrator:
         explain_agent=explain_agent,
         hospital_search_agent=hospital_search_agent,
         ml_predict_tool=ml_predict_tool,
+        clarify_agent=clarify_agent,
     )
 
     return orchestrator
