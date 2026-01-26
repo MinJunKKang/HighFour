@@ -79,7 +79,7 @@ class Orchestrator:
             return {
                 "type": "emergency",
                 "is_emergency": True,
-                "reason": safety_result["reason"],
+                "reason": safety_result.get("user_reason", "응급 상황이 감지되었습니다."),
                 "symptoms": normalized_symptoms,
                 "topk": topk_labels,
                 "hospital_info": hospital_info,
