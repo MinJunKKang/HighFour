@@ -105,7 +105,7 @@ def run():
             st.session_state.last_context = None
 
         elif result.get("is_emergency") is True:
-            msg = f"🚨 응급 가능성이 감지되었습니다.\n\n**판단 사유**: {result.get('reason','-')}\n\n가까운 의료기관 정보를 아래에 표시합니다."
+            msg = f"🚨 응급 가능성이 감지되었습니다.\n\n {result.get('reason','-')}\n\n가까운 의료기관 정보를 아래에 표시합니다."
             add_message("assistant", msg, payload={
                 "hospital_info": result.get("hospital_info", {})
             })
