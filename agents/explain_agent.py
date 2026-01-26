@@ -1,43 +1,50 @@
-# 2026-01-23 송진우
-"""
-Explain Agent : 비진단적 행동 가이드 에이전트
+# agents/explain_agent.py
 
-역할:
-- ML 모델이 산출한 Top-K 질병 후보를
-  사용자 친화적 · 비진단적 설명으로 변환
-"""
+from agents.prompts.loader import load_prompt
 
-from typing import List, Dict, Any
-from agents.prompts import load_prompt
 
 class ExplainAgent:
+    """
+    Top-K 질병 후보를 사용자 친화적으로 설명
+    - 비진단
+    - 점수/확률 언급 금지
+    """
 
     def __init__(self, llm):
         self.llm = llm
-        self.prompt = load_prompt("explain_topk.prompt.md")
+        self.system_prompt = load_prompt("explain_topk.prompt.md")
 
-    def run(
-        self,
-        symptoms: List[str],
-        topk: List[Dict[str, Any]],
-    ) -> str:
+    def run(self, input_data: dict) -> str:
+        """
+        input_data:
+        {
+            "symptoms": list[str],
+            "topk": list[str]
+        }
+        """
+
+        user_prompt = f"""
+사용자 증상 (정규화된 리스트):
+{input_data["symptoms"]}
+
+의심되는 질환 후보 (순서만 의미 있음):
+{input_data["topk"]}
+
+위 정보를 바탕으로,
+- 의료 진단이 아님을 분명히 밝히고
+- 각 질환이 어떤 경우에 고려될 수 있는지
+- 증상과의 일반적인 연관성만 설명하세요
+- 점수, 확률, 순위, 정확도 같은 표현은 절대 사용하지 마세요
+"""
 
         messages = [
-            {
-                "role": "system",
-                "content": self.prompt.render_system()
-            },
-            {
-                "role": "user",
-                "content": self.prompt.render_user({
-                    "symptoms": symptoms,
-                    "topk": topk,
-                })
-            }
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": user_prompt},
         ]
 
-        response = self.llm.chat(messages)
+        resp = self.llm.responses.create(
+            model="gpt-5.2",
+            input=messages,
+        )
 
-        # 🔴 이 줄이 핵심
-        return response["content"]
-
+        return resp.output_text
