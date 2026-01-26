@@ -29,8 +29,19 @@ class HospitalSearchAgent:
 
         query = (
             f"{location} 근처 {department or ''} 병원 3곳 찾아줘.\n"
-            "아래 JSON 형식으로만 출력:\n"
-            '{ "hospitals": [ { "name": "", "address": "", "phone": "" } ] }'
+            "반드시 아래 JSON 형식으로만 출력해.\n"
+            "위도(latitude), 경도(longitude) 포함해.\n\n"
+            "{\n"
+            '  "hospitals": [\n'
+            '    {\n'
+            '      "name": "",\n'
+            '      "address": "",\n'
+            '      "phone": "",\n'
+            '      "latitude": 0.0,\n'
+            '      "longitude": 0.0\n'
+            '    }\n'
+                "  ]\n"
+                "}"
         )
 
         response = self.client.responses.create(
