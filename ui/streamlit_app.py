@@ -2,20 +2,16 @@ import streamlit as st
 import pandas as pd
 from app.main import create_orchestrator
 
-
 # ================================
-# 🏥 병원 정보 렌더링 유틸
+# 병원 정보 렌더링 유틸 (그대로 사용 가능)
 # ================================
 def render_hospitals(hospital_info):
     hospitals = hospital_info.get("hospitals", [])
-
     if not hospitals:
         st.warning("병원 정보를 찾지 못했습니다.")
         return
 
-    # ---------- 텍스트 카드 ----------
     st.subheader("🏥 인근 의료기관")
-
     for i, h in enumerate(hospitals, 1):
         with st.container(border=True):
             st.markdown(f"### {i}. {h.get('name', '이름 없음')}")
@@ -24,113 +20,133 @@ def render_hospitals(hospital_info):
             if h.get("department"):
                 st.write(f"🩺 진료과: {h.get('department')}")
 
-    # ---------- 지도 ----------
     map_rows = []
     for h in hospitals:
         if h.get("latitude") and h.get("longitude"):
-            map_rows.append({
-                "lat": h["latitude"],
-                "lon": h["longitude"],
-                "name": h.get("name", "")
-            })
+            map_rows.append({"lat": h["latitude"], "lon": h["longitude"]})
 
     if map_rows:
         st.subheader("🗺️ 병원 위치 지도")
-        df = pd.DataFrame(map_rows)
-        st.map(df)
+        st.map(pd.DataFrame(map_rows))
 
 
-# ================================
-# 🚀 Streamlit App
-# ================================
-def run():
-    # 1️⃣ 오케스트레이터 초기화
+def init():
+    # orchestrator 1회 생성
     if "orchestrator" not in st.session_state:
-        with st.spinner("전문가 시스템을 연결 중입니다..."):
-            st.session_state.orchestrator = create_orchestrator()
+        st.session_state.orchestrator = create_orchestrator()
 
-    if "page" not in st.session_state:
-        st.session_state.page = "input"
+    # 대화 기록
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    # 마지막 분석 결과(병원 요청 시 재사용)
+    if "last_context" not in st.session_state:
+        st.session_state.last_context = None
 
-    # ============================
-    # 입력 화면
-    # ============================
-    if st.session_state.page == "input":
-        st.title("🩺 AI 건강 정보 안내 (비진단)")
-        st.write("알려주시는 증상을 바탕으로 AI가 관련 정보를 분석합니다.")
 
-        user_input = st.text_area(
-            "증상을 자연스럽게 입력해주세요",
-            placeholder="예: 어제부터 왼쪽 가슴이 찌릿하고 숨쉬기가 불편해요",
-            height=150
-        )
+def add_message(role: str, content: str, payload=None):
+    st.session_state.messages.append({
+        "role": role,
+        "content": content,
+        "payload": payload or {}
+    })
 
-        user_location = st.text_input(
-            "현재 위치 (선택)",
-            placeholder="예: 서울시 강남구"
-        )
 
-        if st.button("분석 시작", type="primary"):
-            if not user_input.strip():
-                st.warning("증상을 입력해주세요.")
-            else:
-                with st.spinner("AI 전문가 팀이 분석 중입니다..."):
-                    result = st.session_state.orchestrator.handle_user_input(
-                        user_input=user_input,
-                        user_location=user_location or None
-                    )
-                    st.session_state.result = result
-                    st.session_state.page = "result"
-                    st.rerun()
+def run():
+    st.set_page_config(page_title="AI 건강 정보 안내", page_icon="🩺")
+    init()
 
-    # ============================
-    # 결과 화면
-    # ============================
-    elif st.session_state.page == "result":
-        res = st.session_state.result
-        st.title("📋 분석 결과")
+    st.title("🩺 AI 건강 정보 안내 (비진단)")
+    st.caption("증상을 입력하면 관련 정보를 안내합니다. 응급으로 의심되면 즉시 의료기관/119를 이용하세요.")
 
-        # 🚨 응급
-        if res.get("is_emergency") is True:
-            st.error("🚨 응급 가능성이 감지되었습니다!")
-            st.markdown(f"### 판단 사유\n{res.get('reason')}")
+    # 위치는 사이드바에 두는 게 채팅 UX에 자연스러움
+    with st.sidebar:
+        st.header("설정")
+        user_location = st.text_input("현재 위치(병원 검색용)", placeholder="예: 서울시 강남구")
+        if st.button("대화 초기화"):
+            st.session_state.messages = []
+            st.session_state.last_context = None
+            st.rerun()
 
-            hospital_info = res.get("hospital_info", {})
-            render_hospitals(hospital_info)
+    # 기존 대화 렌더링
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
 
-            st.warning("※ 본 정보는 의료 진단이 아닙니다. 즉시 의료기관을 방문하세요.")
+            # payload로 병원 정보가 들어온 메시지면 병원 카드/지도 렌더
+            if m["payload"].get("hospital_info"):
+                render_hospitals(m["payload"]["hospital_info"])
 
-        # ✅ 비응급
+            # payload로 질문(clarify) 들어온 메시지면 질문 리스트 렌더
+            qs = m["payload"].get("questions")
+            if qs:
+                st.write("아래 중 답할 수 있는 것만 편하게 알려줘 🙂")
+                for q in qs:
+                    st.write(f"- {q}")
+
+    # 입력창 (채팅)
+    user_text = st.chat_input("예: 어제부터 기침이 나고 가슴이 답답해요")
+
+    if user_text:
+        add_message("user", user_text)
+
+        with st.chat_message("assistant"):
+            with st.spinner("분석 중..."):
+                result = st.session_state.orchestrator.handle_user_input(
+                    user_input=user_text,
+                    user_location=user_location or None
+                )
+
+        # 분기 결과를 “assistant 메시지”로 저장
+        if result["type"] in ("clarify", "redirect"):
+            msg = result.get("message", "")
+            add_message("assistant", msg, payload={
+                "questions": result.get("questions", [])
+            })
+            st.session_state.last_context = None
+
+        elif result.get("is_emergency") is True:
+            msg = f"🚨 응급 가능성이 감지되었습니다.\n\n**판단 사유**: {result.get('reason','-')}\n\n가까운 의료기관 정보를 아래에 표시합니다."
+            add_message("assistant", msg, payload={
+                "hospital_info": result.get("hospital_info", {})
+            })
+            st.session_state.last_context = None
+
         else:
-            st.success("✅ 건강 정보 분석이 완료되었습니다.")
-            st.markdown(f"### 안내 내용\n{res.get('explanation')}")
+            # 비응급: 설명 + (병원 요청 버튼은 “다음 입력/버튼”으로 처리)
+            add_message("assistant", result.get("explanation", ""))
 
-            if res.get("can_request_hospital"):
-                st.divider()
-                if st.button("📍 관련 병원 정보 보기"):
-                    with st.spinner("가까운 병원을 찾는 중입니다..."):
-                        h_result = st.session_state.orchestrator.handle_hospital_request(
-                            symptoms=res.get("symptoms"),
-                            topk=res.get("topk"),
-                            user_location=None
-                        )
-                        st.session_state.hospital_result = h_result
-                        st.session_state.page = "hospital"
-                        st.rerun()
+            # 병원 요청을 위해 context 저장
+            st.session_state.last_context = {
+                "symptoms": result.get("symptoms", []),
+                "topk": result.get("topk", []),
+                "user_location": user_location or None,
+            }
 
-        if st.button("처음으로 돌아가기"):
-            st.session_state.page = "input"
-            st.rerun()
+        st.rerun()
 
-    # ============================
-    # 병원 전용 페이지
-    # ============================
-    elif st.session_state.page == "hospital":
-        st.title("🏥 관련 병원 상세 정보")
+    # 채팅 하단에 “병원 보기” 버튼을 상시 두는 방식
+    ctx = st.session_state.last_context
+    if ctx and (ctx.get("user_location")):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📍 증상 관련 병원 보기", use_container_width=True):
+                with st.spinner("병원 검색 중..."):
+                    h = st.session_state.orchestrator.handle_hospital_request(
+                        symptoms=ctx["symptoms"],
+                        topk=ctx["topk"],
+                        user_location=ctx["user_location"],
+                    )
+                add_message("assistant", "가까운 병원 정보를 가져왔어요.", payload={
+                    "hospital_info": h.get("hospital_info", {})
+                })
+                st.session_state.last_context = None
+                st.rerun()
+        with col2:
+            if st.button("계속 대화하기", use_container_width=True):
+                pass
+    elif ctx and not (ctx.get("user_location")):
+        st.info("병원 정보를 보려면 사이드바에 위치를 입력해줘 📍")
 
-        h_info = st.session_state.hospital_result.get("hospital_info", {})
-        render_hospitals(h_info)
 
-        if st.button("메인 화면으로"):
-            st.session_state.page = "input"
-            st.rerun()
+if __name__ == "__main__":
+    run()
