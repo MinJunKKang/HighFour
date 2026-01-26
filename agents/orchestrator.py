@@ -12,19 +12,19 @@ class Orchestrator:
 
     def __init__(
         self,
+        intent_guard_agent,
         symptom_agent,
         safety_agent,
         explain_agent,
         hospital_search_agent,
         ml_predict_tool,
-        clarify_agent,
     ):
+        self.intent_guard_agent = intent_guard_agent
         self.symptom_agent = symptom_agent
         self.safety_agent = safety_agent
         self.explain_agent = explain_agent
         self.hospital_search_agent = hospital_search_agent
         self.ml_predict_tool = ml_predict_tool
-        self.clarify_agent = clarify_agent
 
     # =========================================================
     # 1️⃣ 최초 사용자 입력 처리
@@ -34,7 +34,34 @@ class Orchestrator:
         user_input: str,
         user_location: Optional[str] = None,
     ) -> Dict[str, Any]:
+        
+        # 0️⃣ Intent Guard (의도 먼저)
+        ig = self.intent_guard_agent.run(user_input)
+        intent = ig.get("intent")
 
+        # 의료 의도 아님 → redirect (여기서 끝)
+        if intent == "redirect":
+            return {
+                "type": "redirect",
+                "is_emergency": False,
+                "symptoms": [],
+                "message": ig.get("message", ""),
+                "questions": [],
+                "can_request_hospital": False,
+        }
+
+        # 의료 의도는 있는데 너무 모호 → clarify (여기서 끝)
+        if intent == "clarify":
+            return {
+                "type": "clarify",
+                "is_emergency": False,
+                "symptoms": [],
+                "message": ig.get("message", ""),
+                "questions": ig.get("questions", []),
+                "can_request_hospital": False,
+        }
+
+        # 여기부터는 medical intent 확정
         # 1️⃣ 증상 추출 (LLM)
         normalized_symptoms = self.symptom_agent.run(user_input)
 
@@ -42,16 +69,20 @@ class Orchestrator:
         print(type(normalized_symptoms), normalized_symptoms)
         print("==================================")
 
+        # medical인데도 증상 추출 실패하면 → clarify로 강제 전환 (여기서 끝)
         if not normalized_symptoms:
-            cr = self.clarify_agent.run(user_input)
             return {
-                "type": cr["route"],
+                "type": "clarify",
                 "is_emergency": False,
                 "symptoms": [],
-                "message": cr["message"],
-                "questions": cr.get("questions", []),
-                "can_request_hospital": False,
-            }
+                "message": "말씀해주신 내용만으로는 증상을 구체적으로 파악하기 어려워요. 아래 질문에 답해주면 더 정확히 안내할게요.",
+                "questions": [
+                    "어느 부위가 어떻게 아프신가요? (예: 팔/손목, 찌릿/욱신/쑤심)",
+                    "언제부터 시작됐고, 다치거나 넘어지신 적이 있나요?",
+                    "붓기/멍/변형/움직이기 어려움/저림이 있나요?"
+            ],
+            "can_request_hospital": False,
+        }
 
         # 2️⃣ ML 질병 후보 예측 (label만 의미 있음)
         topk_raw = self.ml_predict_tool.predict(normalized_symptoms)
