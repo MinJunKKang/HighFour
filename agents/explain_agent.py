@@ -1,10 +1,13 @@
+# agents/explain_agent.py
+
 from agents.prompts.loader import load_prompt
-import json
 
 
 class ExplainAgent:
     """
-    질병 Top-K 결과를 사용자 친화적으로 설명하는 에이전트
+    Top-K 질병 후보를 사용자 친화적으로 설명
+    - 비진단
+    - 점수/확률 언급 금지
     """
 
     def __init__(self, llm):
@@ -13,23 +16,25 @@ class ExplainAgent:
 
     def run(self, input_data: dict) -> str:
         """
-        input_data 예시:
+        input_data:
         {
-            "symptoms": [...],
-            "topk": [...],
-            "disease_info": {...}
+            "symptoms": list[str],
+            "topk": list[str]
         }
         """
 
         user_prompt = f"""
-사용자 증상:
-{input_data.get("symptoms")}
+사용자 증상 (정규화된 리스트):
+{input_data["symptoms"]}
 
-예측된 질병 Top-K:
-{input_data.get("topk")}
+의심되는 질환 후보 (순서만 의미 있음):
+{input_data["topk"]}
 
-질병 관련 정보:
-{input_data.get("disease_info")}
+위 정보를 바탕으로,
+- 의료 진단이 아님을 분명히 밝히고
+- 각 질환이 어떤 경우에 고려될 수 있는지
+- 증상과의 일반적인 연관성만 설명하세요
+- 점수, 확률, 순위, 정확도 같은 표현은 절대 사용하지 마세요
 """
 
         messages = [
@@ -39,7 +44,7 @@ class ExplainAgent:
 
         resp = self.llm.responses.create(
             model="gpt-5.2",
-            input=messages
+            input=messages,
         )
 
         return resp.output_text
