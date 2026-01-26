@@ -5,7 +5,7 @@ from .safety_agent import SafetyAgent
 from .explain_agent import ExplainAgent
 from .hospital_search_agent import HospitalSearchAgent
 from .orchestrator import Orchestrator
-from .clarify_agent import ClarifyAgent
+from .intent_guard_agent import IntentGuardAgent
 
 __all__ = [
     "SymptomAgent",
@@ -13,5 +13,5 @@ __all__ = [
     "ExplainAgent",
     "HospitalSearchAgent",
     "Orchestrator",
-    "ClarifyAgent"
+    "IntentGuardAgent"
 ]
