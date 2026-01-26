@@ -1,10 +1,12 @@
+# 실행 명령어
+# python -m ml.train.train_logistic --csv ml/train/Final_Augmented_dataset_Diseases_and_Symptoms.csv
 import argparse
 import json
 import time
 from pathlib import Path
 
 import numpy as np
-import joblib
+
 from sklearn.linear_model import LogisticRegression
 
 from .split import load_and_split
@@ -53,11 +55,19 @@ def train(args: argparse.Namespace) -> None:
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}")
 
+    
+    model_json_path = outdir / "logistic_model.json"
+    model_data = {
+        "model_type": "LogisticRegression",
+        "classes": list(split.classes),
+        "feature_names": split.feature_names,
+        "intercept": model.intercept_.tolist(),
+        "coef": model.coef_.tolist()
+    }
+    with open(model_json_path, "w", encoding="utf-8") as f:
+        json.dump(model_data, f, ensure_ascii=False, indent=2)
 
-    model_path = outdir / "logistic_model.pkl"
-    joblib.dump(model, model_path)
-
-    # 설명 에이전트(Explain Agent)용 가중치 데이터 생성
+    # 설명 에이전트(Explain Agent)용 가중치 데이터 생성 (기존 유지)
     coef_dict = {}
     for i, class_name in enumerate(split.classes):
         top_indices = np.argsort(np.abs(model.coef_[i]))[-10:][::-1]
@@ -75,8 +85,7 @@ def train(args: argparse.Namespace) -> None:
         "metrics": metrics
     }
     (outdir / "train_config_logistic.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    print(f"\n[Saved] {model_path}")
-
+    print(f"\n[Saved] {model_json_path}")
 
 
 def build_argparser() -> argparse.ArgumentParser:
