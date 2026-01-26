@@ -1,29 +1,13 @@
 # agents/orchestrator.py
 
-"""
-Orchestrator
-============
-
-역할:
-- 전체 파이프라인 순서 제어
-- Agent / Tool 간 데이터 전달
-- 응급 여부에 따른 분기 처리
-- 최종 UI 응답용 dict 조립
-
-❌ 하지 않는 것
-- GPT 호출
-- 프롬프트 작성
-- 의료 판단
-- 병원 검색 로직 직접 구현
-"""
-
 from typing import Dict, Any, Optional
 
 
 class Orchestrator:
     """
     Stateless Coordinator
-    세션 상태는 Streamlit / FastAPI 레이어에서 관리
+    - 파이프라인 제어만 담당
+    - 판단/설명/검색 로직 없음
     """
 
     def __init__(
@@ -33,17 +17,8 @@ class Orchestrator:
         explain_agent,
         hospital_search_agent,
         ml_predict_tool,
-        clarify_agent
+        clarify_agent,
     ):
-        """
-        main.py에서 생성한 객체들을 DI로 주입
-
-        - symptom_agent         : GPT (증상 추출)
-        - safety_agent          : GPT (응급 판단)
-        - explain_agent         : GPT (설명 생성)
-        - hospital_search_agent : GPT + Web Search (병원 검색)
-        - ml_predict_tool       : XGBoost 예측
-        """
         self.symptom_agent = symptom_agent
         self.safety_agent = safety_agent
         self.explain_agent = explain_agent
@@ -52,53 +27,51 @@ class Orchestrator:
         self.clarify_agent = clarify_agent
 
     # =========================================================
-    # 1️⃣ 최초 사용자 증상 입력 처리
+    # 1️⃣ 최초 사용자 입력 처리
     # =========================================================
     def handle_user_input(
         self,
         user_input: str,
         user_location: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Flow:
-        1. 자연어 → 증상 feature 추출 (LLM)
-        2. ML Top-K 질병 예측
-        3. Safety Agent로 응급 여부 판단
-        4. 응급 / 비응급 분기
-        """
 
-        # 1️⃣ 증상 추출
+        # 1️⃣ 증상 추출 (LLM)
         normalized_symptoms = self.symptom_agent.run(user_input)
+
+        print("=== [DEBUG] SymptomAgent Output ===")
+        print(type(normalized_symptoms), normalized_symptoms)
+        print("==================================")
 
         if not normalized_symptoms:
             cr = self.clarify_agent.run(user_input)
-
-
             return {
-            "type": cr["route"], # "clarify" or "redirect"
-            "is_emergency": False,
-            "symptoms": [],
-            "message": cr["message"],
-            "questions": cr.get("questions", []),
-            "can_request_hospital": False, # 버튼 숨김
+                "type": cr["route"],
+                "is_emergency": False,
+                "symptoms": [],
+                "message": cr["message"],
+                "questions": cr.get("questions", []),
+                "can_request_hospital": False,
             }
 
-        # 2️⃣ ML 예측
-        topk = self.ml_predict_tool.predict(normalized_symptoms)
+        # 2️⃣ ML 질병 후보 예측 (label만 의미 있음)
+        topk_raw = self.ml_predict_tool.predict(normalized_symptoms)
 
-        # 3️⃣ 응급 여부 판단
+        # 👉 ExplainAgent용: label만 전달
+        topk_labels = [d["label"] for d in topk_raw]
+
+        # 3️⃣ Safety 판단 (GPT가 점수 계산)
         safety_result = self.safety_agent.run(
             symptoms=normalized_symptoms,
-            topk=topk,
+            topk=topk_labels,
         )
 
         # =====================================================
-        # 🚨 응급 상황 → 병원 정보 즉시 제공
+        # 🚨 응급 분기
         # =====================================================
         if safety_result["is_emergency"]:
             hospital_info = self.hospital_search_agent.run(
                 symptoms=normalized_symptoms,
-                topk=topk,
+                topk=topk_labels,
                 location=user_location,
                 emergency=True,
             )
@@ -108,18 +81,17 @@ class Orchestrator:
                 "is_emergency": True,
                 "reason": safety_result["reason"],
                 "symptoms": normalized_symptoms,
-                "topk": topk,
+                "topk": topk_labels,
                 "hospital_info": hospital_info,
             }
 
         # =====================================================
-        # ✅ 비응급 → 설명 Agent로 전달
+        # ✅ 비응급 → ExplainAgent
         # =====================================================
         explanation = self.explain_agent.run(
             input_data={
-                "normalized_symptoms": normalized_symptoms,
-                "topk": topk,
-                "emergency": False,
+                "symptoms": normalized_symptoms,
+                "topk": topk_labels,  # 🔥 점수 없음
             }
         )
 
@@ -127,13 +99,13 @@ class Orchestrator:
             "type": "explanation",
             "is_emergency": False,
             "symptoms": normalized_symptoms,
-            "topk": topk,
+            "topk": topk_labels,
             "explanation": explanation,
-            "can_request_hospital": True,  # UI에서 버튼 표시용
+            "can_request_hospital": True,
         }
 
     # =========================================================
-    # 2️⃣ 사용자가 "병원 정보 알려줘"라고 요청했을 때
+    # 2️⃣ 병원 정보 요청
     # =========================================================
     def handle_hospital_request(
         self,
@@ -141,9 +113,6 @@ class Orchestrator:
         topk,
         user_location: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        이미 계산된 증상 / Top-K를 기반으로 병원 정보 제공
-        """
 
         hospital_info = self.hospital_search_agent.run(
             symptoms=symptoms,
