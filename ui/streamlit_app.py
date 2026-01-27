@@ -65,7 +65,7 @@ def run():
         if st.button("대화 초기화"):
             st.session_state.messages = []
             st.session_state.last_context = None
-            st.rerun()
+            st.rerun() # 페이지 새로고침
 
     # 기존 대화 렌더링
     for m in st.session_state.messages:
