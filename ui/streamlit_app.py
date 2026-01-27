@@ -2,6 +2,85 @@ import streamlit as st
 import pandas as pd
 from app.main import create_orchestrator
 
+
+# ================================
+# UI 레이아웃 / 가독성 개선 (디자인 전용)
+# ================================
+st.set_page_config(
+    page_title="AI 건강 정보 안내",
+    page_icon="🩺",
+    layout="wide"
+)
+
+st.markdown(
+    """
+    <style>
+    /* ===============================
+       전체 레이아웃
+    =============================== */
+    .block-container {
+        max-width: 95%;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+
+    p, span, div {
+        word-break: keep-all;
+        line-height: 1.6;
+    }
+
+    /* ===============================
+       입력창 (text_input / chat_input)
+    =============================== */
+    div[data-baseweb="input"] > div {
+        border: 1px solid #7fb3ff;
+        background-color: #f5faff;
+    }
+
+    div[data-baseweb="input"]:focus-within > div {
+        border-color: #6aa8ff;
+        box-shadow: 0 0 0 1px #6aa8ff;
+    }
+
+    /* ===============================
+       chat_input (하단 입력창)
+    =============================== */
+    div[data-testid="stChatInput"] > div {
+        border: 1px solid #7fb3ff;
+        background-color: #f5faff;
+    }
+
+    /* 전송 버튼 */
+    div[data-testid="stChatInput"] button {
+        background-color: #7fb3ff;
+        border: none;
+    }
+
+    div[data-testid="stChatInput"] button:hover {
+        background-color: #6aa8ff;
+    }
+
+    /* ===============================
+       버튼 (확인 / 초기화 등)
+    =============================== */
+    button {
+        background-color: #e8f2ff;
+        border: 1px solid #c7ddff;
+        color: #1f3a5f;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    button:hover {
+        background-color: #d6e9ff;
+        border-color: #b3d4ff;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # ================================
 # 병원 정보 렌더링 유틸 (그대로 사용 가능)
 # ================================
@@ -38,6 +117,7 @@ def init():
     # 대화 기록
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
     # 마지막 분석 결과(병원 요청 시 재사용)
     if "last_context" not in st.session_state:
         st.session_state.last_context = None
@@ -52,7 +132,6 @@ def add_message(role: str, content: str, payload=None):
 
 
 def run():
-    st.set_page_config(page_title="AI 건강 정보 안내", page_icon="🩺")
     init()
 
     st.title("🩺 AI 건강 정보 안내 (비진단)")
@@ -60,26 +139,40 @@ def run():
 
     # 위치는 사이드바에 두는 게 채팅 UX에 자연스러움
     with st.sidebar:
-        st.header("설정")
-        user_location = st.text_input("현재 위치(병원 검색용)", placeholder="예: 서울시 강남구")
-        if st.button("대화 초기화"):
+        st.header("⚙️ 설정")
+        st.markdown("**📍 현재 위치(병원 검색용)**")
+
+        col_input, col_btn = st.columns([5, 2])
+
+        with col_input:
+            user_location = st.text_input(
+                "",
+                placeholder="예: 서울시 강남구",
+                key="location_input",
+                label_visibility="collapsed"
+            )
+
+        with col_btn:
+            confirm_location = st.button("확인", use_container_width=True)
+
+        if confirm_location and user_location:
+            st.success("📍 현재 위치 설정됨")
+
+        if st.button("대화 초기화", use_container_width=True):
             st.session_state.messages = []
             st.session_state.last_context = None
             st.rerun()
 
-    # 기존 대화 렌더링
     for m in st.session_state.messages:
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-            # payload로 병원 정보가 들어온 메시지면 병원 카드/지도 렌더
             if m["payload"].get("hospital_info"):
                 render_hospitals(m["payload"]["hospital_info"])
 
-            # payload로 질문(clarify) 들어온 메시지면 질문 리스트 렌더
             qs = m["payload"].get("questions")
             if qs:
-                st.write("아래 중 답할 수 있는 것만 편하게 알려줘 🙂")
+                st.write("아래 중 답할 수 있는 것만 편하게 알려주세요. 🙂")
                 for q in qs:
                     st.write(f"- {q}")
 
@@ -90,7 +183,7 @@ def run():
         add_message("user", user_text)
 
         with st.chat_message("assistant"):
-            with st.spinner("분석 중..."):
+            with st.spinner("🧠 분석 중..."):
                 result = st.session_state.orchestrator.handle_user_input(
                     user_input=user_text,
                     user_location=user_location or None
@@ -130,13 +223,13 @@ def run():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("📍 증상 관련 병원 보기", use_container_width=True):
-                with st.spinner("병원 검색 중..."):
+                with st.spinner("🔍 병원 검색 중..."):
                     h = st.session_state.orchestrator.handle_hospital_request(
                         symptoms=ctx["symptoms"],
                         topk=ctx["topk"],
                         user_location=ctx["user_location"],
                     )
-                add_message("assistant", "가까운 병원 정보를 가져왔어요.", payload={
+                add_message("assistant", "🏥 가까운 병원 정보를 가져왔어요.", payload={
                     "hospital_info": h.get("hospital_info", {})
                 })
                 st.session_state.last_context = None
@@ -145,7 +238,7 @@ def run():
             if st.button("계속 대화하기", use_container_width=True):
                 pass
     elif ctx and not (ctx.get("user_location")):
-        st.info("병원 정보를 보려면 사이드바에 위치를 입력해줘 📍")
+        st.info("📍병원 정보를 보려면 사이드바에 위치를 입력해주세요.")
 
 
 if __name__ == "__main__":
