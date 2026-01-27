@@ -141,22 +141,13 @@ def run():
     with st.sidebar:
         st.header("⚙️ 설정")
         st.markdown("**📍 현재 위치(병원 검색용)**")
-
-        col_input, col_btn = st.columns([5, 2])
-
-        with col_input:
-            user_location = st.text_input(
-                "",
-                placeholder="예: 서울시 강남구",
-                key="location_input",
-                label_visibility="collapsed"
-            )
-
-        with col_btn:
-            confirm_location = st.button("확인", use_container_width=True)
-
-        if confirm_location and user_location:
-            st.success("📍 현재 위치 설정됨")
+        
+        user_location = st.text_input(
+            "",
+            placeholder="예: 서울시 강남구",
+            key="location_input",
+            label_visibility="collapsed"
+        )
 
         if st.button("대화 초기화", use_container_width=True):
             st.session_state.messages = []
@@ -220,23 +211,19 @@ def run():
     # 채팅 하단에 “병원 보기” 버튼을 상시 두는 방식
     ctx = st.session_state.last_context
     if ctx and (ctx.get("user_location")):
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📍 증상 관련 병원 보기", use_container_width=True):
-                with st.spinner("🔍 병원 검색 중..."):
-                    h = st.session_state.orchestrator.handle_hospital_request(
-                        symptoms=ctx["symptoms"],
-                        topk=ctx["topk"],
-                        user_location=ctx["user_location"],
-                    )
-                add_message("assistant", "🏥 가까운 병원 정보를 가져왔어요.", payload={
-                    "hospital_info": h.get("hospital_info", {})
-                })
-                st.session_state.last_context = None
-                st.rerun()
-        with col2:
-            if st.button("계속 대화하기", use_container_width=True):
-                pass
+        if st.button("📍 증상 관련 병원 보기", use_container_width=True):
+            with st.spinner("🔍 병원 검색 중..."):
+                h = st.session_state.orchestrator.handle_hospital_request(
+                    symptoms=ctx["symptoms"],
+                    topk=ctx["topk"],
+                    user_location=ctx["user_location"],
+                )
+            add_message("assistant", "🏥 가까운 병원 정보를 가져왔어요.", payload={
+                "hospital_info": h.get("hospital_info", {})
+            })
+            st.session_state.last_context = None
+            st.rerun()
+
     elif ctx and not (ctx.get("user_location")):
         st.info("📍병원 정보를 보려면 사이드바에 위치를 입력해주세요.")
 
